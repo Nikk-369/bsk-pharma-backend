@@ -1,4 +1,4 @@
-const NewArrivalProduct = require("../models/newArrival");
+const NewArrivalProduct = require("../models/newarrival");
 const { logger } = require("../utils/logger");
 
 // Create a new newArrivalProduct
