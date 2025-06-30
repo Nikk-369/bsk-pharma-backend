@@ -12,13 +12,13 @@ require("dotenv").config();
 
 // const DEFAULT_PASSWORD = "Admin@123";
 
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASSWORD,
-  },
-});
+// const transporter = nodemailer.createTransport({
+//   service: "gmail",
+//   auth: {
+//     user: process.env.EMAIL_USER,
+//     pass: process.env.EMAIL_PASSWORD,
+//   },
+// });
 
 const findUser = async (email) => {
   const admin = await Admin.findOne({ email });
@@ -28,127 +28,127 @@ const findUser = async (email) => {
 
 
 
-const forgotPassword = async (req, res) => {
-  try {
-    const { email } = req.body;
+// const forgotPassword = async (req, res) => {
+//   try {
+//     const { email } = req.body;
 
-    const admin = await Admin.findUser({ email });
-    if (!admin) {
-      return res.status(404).json({ message: "Email not found" });
-    }
+//     const admin = await Admin.findUser({ email });
+//     if (!admin) {
+//       return res.status(404).json({ message: "Email not found" });
+//     }
 
-    // Generate OTP
-    const otp = Math.floor(100000 + Math.random() * 900000); // 6-digit OTP
-    const otpExpiry = Date.now() + 10 * 60 * 1000; // 10 minutes from now
+//     // Generate OTP
+//     const otp = Math.floor(100000 + Math.random() * 900000); // 6-digit OTP
+//     const otpExpiry = Date.now() + 10 * 60 * 1000; // 10 minutes from now
 
-    // Save OTP and expiry to the database
-    admin.otp = otp;
-    admin.otpExpiry = otpExpiry;
-    await admin.save();
+//     // Save OTP and expiry to the database
+//     admin.otp = otp;
+//     admin.otpExpiry = otpExpiry;
+//     await admin.save();
 
-    // Send OTP via email
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: email,
-      subject: "Password Reset OTP",
-      text: `Your OTP for resetting your password is ${otp}. This OTP will expire in 10 minutes.`,
-    };
+//     // Send OTP via email
+//     const mailOptions = {
+//       from: process.env.EMAIL_USER,
+//       to: email,
+//       subject: "Password Reset OTP",
+//       text: `Your OTP for resetting your password is ${otp}. This OTP will expire in 10 minutes.`,
+//     };
 
-    await transporter.sendMail(mailOptions);
+//     await transporter.sendMail(mailOptions);
 
-    logger.info(`OTP sent to ${email}`);
-    res.status(200).json({ message: "OTP sent to your email" });
-  } catch (error) {
-    logger.error("Error during forgot password:", error);
-    res.status(500).json({ message: "Internal Server Error" });
-  }
-};
+//     logger.info(`OTP sent to ${email}`);
+//     res.status(200).json({ message: "OTP sent to your email" });
+//   } catch (error) {
+//     logger.error("Error during forgot password:", error);
+//     res.status(500).json({ message: "Internal Server Error" });
+//   }
+// };
 
-const verifyOTP = async (req, res) => {
-  try {
-    const { email, otp } = req.body;
+// const verifyOTP = async (req, res) => {
+//   try {
+//     const { email, otp } = req.body;
 
-    const result = await findUser(email);
-    if (!result) {
-      return res.status(404).json({ message: "Email not found" });
-    }
+//     const result = await findUser(email);
+//     if (!result) {
+//       return res.status(404).json({ message: "Email not found" });
+//     }
 
-    const { type, user } = result;
+//     const { type, user } = result;
 
-    if (!user.otp || !user.otpExpiry) {
-      return res.status(400).json({ message: "No OTP found for this email" });
-    }
+//     if (!user.otp || !user.otpExpiry) {
+//       return res.status(400).json({ message: "No OTP found for this email" });
+//     }
 
-    if (Date.now() > user.otpExpiry) {
-      return res.status(400).json({ message: "OTP has expired" });
-    }
+//     if (Date.now() > user.otpExpiry) {
+//       return res.status(400).json({ message: "OTP has expired" });
+//     }
 
-    if (parseInt(otp, 10) !== user.otp) {
-      return res.status(400).json({ message: "Invalid OTP" });
-    }
+//     if (parseInt(otp, 10) !== user.otp) {
+//       return res.status(400).json({ message: "Invalid OTP" });
+//     }
 
-    // Clear OTP and expiry after successful verification
-    user.otp = null;
-    user.otpExpiry = null;
-    await user.save();
+//     // Clear OTP and expiry after successful verification
+//     user.otp = null;
+//     user.otpExpiry = null;
+//     await user.save();
 
-    logger.info("OTP verified successfully");
-    res.status(200).json({ message: "OTP verified successfully" });
-  } catch (error) {
-    logger.error("Error during OTP verification:", error);
-    res.status(500).json({ message: "Internal Server Error" });
-  }
-};
+//     logger.info("OTP verified successfully");
+//     res.status(200).json({ message: "OTP verified successfully" });
+//   } catch (error) {
+//     logger.error("Error during OTP verification:", error);
+//     res.status(500).json({ message: "Internal Server Error" });
+//   }
+// };
 
-const updatePassword = async (req, res) => {
-  try {
-    const { email, oldPassword, newPassword } = req.body;
+// const updatePassword = async (req, res) => {
+//   try {
+//     const { email, oldPassword, newPassword } = req.body;
 
-    if (!email || !newPassword) {
-      return res
-        .status(400)
-        .json({ message: "Email and new password are required" });
-    }
+//     if (!email || !newPassword) {
+//       return res
+//         .status(400)
+//         .json({ message: "Email and new password are required" });
+//     }
 
-    const result = await findUser(email);
-    if (!result) {
-      return res.status(404).json({ message: "User not found" });
-    }
+//     const result = await findUser(email);
+//     if (!result) {
+//       return res.status(404).json({ message: "User not found" });
+//     }
 
-    const { type, user } = result;
+//     const { type, user } = result;
 
-    if (oldPassword) {
-      const isOldPasswordValid = await bcrypt.compare(
-        oldPassword,
-        user.password
-      );
-      if (!isOldPasswordValid) {
-        return res.status(400).json({ message: "Old password is incorrect" });
-      }
-    }
+//     if (oldPassword) {
+//       const isOldPasswordValid = await bcrypt.compare(
+//         oldPassword,
+//         user.password
+//       );
+//       if (!isOldPasswordValid) {
+//         return res.status(400).json({ message: "Old password is incorrect" });
+//       }
+//     }
 
-    const hashedNewPassword = await bcrypt.hash(newPassword, 10);
-    user.password = hashedNewPassword;
-    await user.save();
+//     const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+//     user.password = hashedNewPassword;
+//     await user.save();
 
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: email,
-      subject: "Password Updated Successfully",
-      text: `Your password has been successfully updated.`,
-    };
+//     const mailOptions = {
+//       from: process.env.EMAIL_USER,
+//       to: email,
+//       subject: "Password Updated Successfully",
+//       text: `Your password has been successfully updated.`,
+//     };
 
-    await transporter.sendMail(mailOptions);
+//     await transporter.sendMail(mailOptions);
 
-    logger.info("Password updated successfully and email notification sent");
-    res
-      .status(200)
-      .json({ message: "Password updated successfully and email sent" });
-  } catch (error) {
-    logger.error("Error updating password:", error);
-    res.status(500).json({ message: "Internal Server Error" });
-  }
-};
+//     logger.info("Password updated successfully and email notification sent");
+//     res
+//       .status(200)
+//       .json({ message: "Password updated successfully and email sent" });
+//   } catch (error) {
+//     logger.error("Error updating password:", error);
+//     res.status(500).json({ message: "Internal Server Error" });
+//   }
+// };
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -434,9 +434,6 @@ module.exports = {
   readAllAdmins,
   getImage,
   adminLogin, // renamed to login
-  forgotPassword,
-  verifyOTP,
-  updatePassword,
   getAdminCount,
 };
 

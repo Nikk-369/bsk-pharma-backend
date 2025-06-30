@@ -5,7 +5,7 @@ const connectDB = require("./config/db");
 const adminRoutes = require("./routes/admin");
 const usersRoutes = require("./routes/users");
 const orderRoutes = require("./routes/order");
-const support = require("./routes/support");
+// const support = require("./routes/support");
 // const cities = require("./routes/city");
 
 
@@ -28,7 +28,7 @@ app.use('/uploads', express.static('uploads'));
 app.use("/admin", adminRoutes);
 app.use("/user", usersRoutes);
 app.use('/api', orderRoutes);
-app.use("/", support);
+// app.use("/", support);
 // app.use("/", cities);
 
 

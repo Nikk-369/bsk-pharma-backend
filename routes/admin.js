@@ -5,9 +5,6 @@ const {
   readAdmin,
   deleteAdmin,
   readAllAdmins,
-  forgotPassword,
-  verifyOTP,
-  updatePassword,
   createAdmin,
   getAdminCount,
 } = require("../controllers/adminControllers");
@@ -17,9 +14,9 @@ const tokenRequired = require("../middlewares/authMiddlewares");
 const router = express.Router();
 
 router.post("/login", adminLogin);
-router.post("/forgotPassword", forgotPassword);
-router.post("/verifyOTP", verifyOTP);
-router.post("/updatePassword", updatePassword);
+// router.post("/forgotPassword", forgotPassword);
+// router.post("/verifyOTP", verifyOTP);
+// router.post("/updatePassword", updatePassword);
 
 router.post("/createAdmin", createAdmin);
 router.get("/readallAdmins", readAllAdmins);
