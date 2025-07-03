@@ -5,16 +5,18 @@ const { logger } = require("../utils/logger");
 const multer = require("multer");
 const path = require("path");
 
-// Storage config
+// Update the multer storage configuration
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, "uploads/");
+    // Use the absolute path to 'uploads' directory
+    cb(null, path.join(__dirname, "../uploads/products"));  // absolute path
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
     cb(null, uniqueSuffix + "-" + file.originalname);
   },
 });
+
 
 exports.upload = multer({ storage: storage });
 
