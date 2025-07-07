@@ -27,8 +27,8 @@ app.use('/uploads', express.static('uploads'));
 
 
 // API routes
-app.use("/api/admin", adminRoutes);
-app.use("/api/user", usersRoutes);
+app.use("/admin", adminRoutes);
+app.use("/user", usersRoutes);
 app.use('/api', orderRoutes);
 // app.use("/", support);
 // app.use("/", cities);
