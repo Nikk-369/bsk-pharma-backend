@@ -86,60 +86,13 @@ exports.getProductById = async (req, res) => {
 };
 
 // option 1:  Update a product
-// exports.updateProduct = async (req, res) => {
-//   try {
-//     logger.info(`Request to update product ${req.params.id} with data: ${JSON.stringify(req.body)}`);
-
-//     const updatedProduct = await Product.findByIdAndUpdate(
-//       req.params.id,
-//       { ...req.body, updatedAt: Date.now() },
-//       { new: true, runValidators: true }
-//     );
-
-//     if (!updatedProduct) {
-//       logger.warn(`Product not found for update: ${req.params.id}`);
-//       return res.status(404).json({ message: "Product not found" });
-//     }
-
-//     logger.info(`Product updated: ${updatedProduct._id}`);
-//     res.status(200).json(updatedProduct);
-//   } catch (error) {
-//     logger.error(`Error updating product (${req.params.id}):`, error);
-//     res.status(400).json({ message: error.message });
-//   }
-// };
-
-// option 2:
 exports.updateProduct = async (req, res) => {
   try {
-    // Parse incoming form data
-    const existingMedia = Array.isArray(req.body.existingMedia)
-      ? req.body.existingMedia
-      : req.body.existingMedia
-        ? [req.body.existingMedia]
-        : [];
-
-    const newMedia = Object.values(req.files || {}).map(file => ({
-      url: `/uploads/products/${file.filename}`,
-      type: file.mimetype.startsWith("video") ? "video" : "image",
-      name: file.originalname,
-      size: file.size
-    }));
-
-    const mergedMedia = [...newMedia, ...existingMedia.map(url => ({
-      url,
-      type: url.includes('.mp4') ? 'video' : 'image',
-      name: path.basename(url),
-      size: 0 // size unknown, optional
-    }))];
+    logger.info(`Request to update product ${req.params.id} with data: ${JSON.stringify(req.body)}`);
 
     const updatedProduct = await Product.findByIdAndUpdate(
       req.params.id,
-      {
-        ...req.body,
-        media: mergedMedia,
-        updatedAt: Date.now()
-      },
+      { ...req.body, updatedAt: Date.now() },
       { new: true, runValidators: true }
     );
 
@@ -155,6 +108,53 @@ exports.updateProduct = async (req, res) => {
     res.status(400).json({ message: error.message });
   }
 };
+
+// option 2: with media
+// exports.updateProduct = async (req, res) => {
+//   try {
+//     // Parse incoming form data
+//     const existingMedia = Array.isArray(req.body.existingMedia)
+//       ? req.body.existingMedia
+//       : req.body.existingMedia
+//         ? [req.body.existingMedia]
+//         : [];
+
+//     const newMedia = Object.values(req.files || {}).map(file => ({
+//       url: `/uploads/products/${file.filename}`,
+//       type: file.mimetype.startsWith("video") ? "video" : "image",
+//       name: file.originalname,
+//       size: file.size
+//     }));
+
+//     const mergedMedia = [...newMedia, ...existingMedia.map(url => ({
+//       url,
+//       type: url.includes('.mp4') ? 'video' : 'image',
+//       name: path.basename(url),
+//       size: 0 // size unknown, optional
+//     }))];
+
+//     const updatedProduct = await Product.findByIdAndUpdate(
+//       req.params.id,
+//       {
+//         ...req.body,
+//         media: mergedMedia,
+//         updatedAt: Date.now()
+//       },
+//       { new: true, runValidators: true }
+//     );
+
+//     if (!updatedProduct) {
+//       logger.warn(`Product not found for update: ${req.params.id}`);
+//       return res.status(404).json({ message: "Product not found" });
+//     }
+
+//     logger.info(`Product updated: ${updatedProduct._id}`);
+//     res.status(200).json(updatedProduct);
+//   } catch (error) {
+//     logger.error(`Error updating product (${req.params.id}):`, error);
+//     res.status(400).json({ message: error.message });
+//   }
+// };
 
 
 
