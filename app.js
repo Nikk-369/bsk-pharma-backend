@@ -49,6 +49,10 @@ app.get("/api/logs", (req, res) => {
   });
 });
 
+
+app.get('/', (req, res) => {
+  res.send('✅ Dr BSK Healthcare backend is running with HTTPS!');
+});
 module.exports = app;
 
 
