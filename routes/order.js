@@ -87,4 +87,8 @@ router.get('/totalOrdercount', async (req, res) => {
     }
 });
 
+
+router.get('/', (req, res) => {
+    res.send("API Working");
+});
 module.exports = router;
