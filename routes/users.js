@@ -14,7 +14,7 @@ const upload = require("../middlewares/uploadMiddleware");
 router.post('/createProduct', productController.upload.array('media', 10), productController.createProduct);
 router.get("/allproducts", productController.getAllProducts);
 router.get("/product/:id", productController.getProductById);
-router.put("/updateProduct/:id", productController.updateProduct);
+router.put("/updateProduct/:id",productController.upload.array('media', 10), productController.updateProduct);
 router.delete("/deleteProduct/:id", productController.deleteProduct);
 router.get("/search", productController.searchProducts);
 router.get("/totalProductcount", productController.getProductCount);
