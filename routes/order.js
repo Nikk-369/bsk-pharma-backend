@@ -85,7 +85,7 @@ router.get('/totalOrdercount', async (req, res) => {
 });
 
 // Update Order Status by ID
-router.put('/orders/:orderId/status', async (req, res) => {
+router.post('/orders/:orderId/status', async (req, res) => {
     const { orderId } = req.params;
     const { status } = req.body;
 
