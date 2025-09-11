@@ -56,8 +56,6 @@ router.get('/orders/:userId', async (req, res) => {
     }
 });
 
-
-
 // ✅ New Route: Get All Orders
 router.get('/orders', async (req, res) => {
     logger.info("Received request to fetch all orders");
@@ -71,7 +69,6 @@ router.get('/orders', async (req, res) => {
         res.status(500).json({ message: "Server error", error: error.message });
     }
 });
-
 
 // Get Total Order Count
 router.get('/totalOrdercount', async (req, res) => {
@@ -87,6 +84,38 @@ router.get('/totalOrdercount', async (req, res) => {
     }
 });
 
+// Update Order Status by ID
+router.patch('/orders/:orderId/status', async (req, res) => {
+    const { orderId } = req.params;
+    const { status } = req.body;
+
+    logger.info("Received request to update order status", { orderId, status });
+
+    if (!status || !['Pending', 'Delivered', 'Cancelled'].includes(status)) {
+        logger.warn("Invalid or missing status in update request", { status });
+        return res.status(400).json({ message: "Invalid or missing status" });
+    }
+
+    try {
+        const updatedOrder = await Order.findByIdAndUpdate(
+            orderId,
+            { status },
+            { new: true }
+        );
+
+        if (!updatedOrder) {
+            logger.warn("Order not found for status update", { orderId });
+            return res.status(404).json({ message: "Order not found" });
+        }
+
+        logger.info("Order status updated successfully", { orderId, status });
+
+        res.status(200).json({ message: "Order status updated", order: updatedOrder });
+    } catch (error) {
+        logger.error("Error updating order status", { error: error.message, stack: error.stack });
+        res.status(500).json({ message: "Server error", error: error.message });
+    }
+});
 
 router.get('/', (req, res) => {
     res.send("API Working");
