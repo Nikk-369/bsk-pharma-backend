@@ -98,11 +98,12 @@ router.get('/totalOrdercount', async (req, res) => {
     }
 });
 
-// Update Order Status by ID
-router.post('/orders/:orderId/status', async (req, res) => {
+// Update Order Status by ID (using PUT method)
+router.patch('/orders/:orderId/status', async (req, res) => {
     const { orderId } = req.params;
     const { status } = req.body;
 
+    // Validate the status
     if (!status || !['Pending', 'Delivered', 'Cancelled'].includes(status)) {
         return res.status(400).json({ message: "Invalid or missing status" });
     }
@@ -111,7 +112,7 @@ router.post('/orders/:orderId/status', async (req, res) => {
         const updatedOrder = await Order.findByIdAndUpdate(
             orderId,
             { status },
-            { new: true }
+            { new: true } // This will return the updated order
         );
 
         if (!updatedOrder) {
@@ -123,6 +124,7 @@ router.post('/orders/:orderId/status', async (req, res) => {
         res.status(500).json({ message: "Server error", error: error.message });
     }
 });
+
 
 
 router.get('/', (req, res) => {
