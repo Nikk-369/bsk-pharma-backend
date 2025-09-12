@@ -235,7 +235,7 @@ router.put('/orders/:orderId/status', async (req, res) => {
 
     try {
         const updatedOrder = await Order.findByIdAndUpdate(
-            orderId,
+            orderId ,
             { status },
             { new: true }
         );
