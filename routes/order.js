@@ -70,7 +70,6 @@ router.get('/order/:orderId', async (req, res) => {
     }
 });
 
-
 // ✅ New Route: Get All Orders
 router.get('/orders', async (req, res) => {
     logger.info("Received request to fetch all orders");
