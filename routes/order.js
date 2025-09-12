@@ -254,7 +254,7 @@ router.put('/orders/:orderId/status', async (req, res) => {
     }
 });
 
-module.exports = router;
+
 
 router.get('/', (req, res) => {
     res.send("API Working");
