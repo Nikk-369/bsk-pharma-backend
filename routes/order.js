@@ -226,33 +226,42 @@ router.put('/orders/:orderId/status', async (req, res) => {
     const { orderId } = req.params;
     const { status } = req.body;
 
+    // Logging the received request for debugging purposes
     logger.info("Received request to update order status", { orderId, status });
 
+    // Validation for status
     if (!status || !['Pending', 'Delivered', 'Cancelled'].includes(status)) {
         logger.warn("Invalid or missing status in update request", { status });
         return res.status(400).json({ message: "Invalid or missing status" });
     }
 
     try {
-        const updatedOrder = await Order.findByIdAndUpdate(
-            orderId,
-            { status },
-            { new: true }
+        // Attempting to update the order status
+        const updatedOrder = await Order.updateOne(
+            { _id: orderId }, // Find the order by ID
+            { $set: { status: status } } // Update the status
         );
 
-        if (!updatedOrder) {
+        // If no order was found with the given ID
+        if (updatedOrder.matchedCount === 0) {
             logger.warn("Order not found for status update", { orderId });
             return res.status(404).json({ message: "Order not found" });
         }
 
+        // If update was successful
         logger.info("Order status updated successfully", { orderId, status });
 
-        res.status(200).json({ message: "Order status updated", order: updatedOrder });
+        // Respond with success message and updated order data
+        res.status(200).json({ message: "Order status updated", order: { ...updatedOrder, status } });
     } catch (error) {
+        // Logging the error for debugging purposes
         logger.error("Error updating order status", { error: error.message, stack: error.stack });
+
+        // Respond with server error message
         res.status(500).json({ message: "Server error", error: error.message });
     }
 });
+
 
 router.get('/', (req, res) => {
     res.send("API Working");
