@@ -56,6 +56,21 @@ router.get('/orders/:userId', async (req, res) => {
     }
 });
 
+// Get Orders by ID (order _id not user id)
+router.get('/order/:orderId', async (req, res) => {
+    try {
+        const order = await Order.findById(req.params.orderId);
+        if (!order) {
+            res.status(404).json({ message: 'Order not found' });
+        } else {
+            res.status(200).json(order);
+        }
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+});
+
+
 // ✅ New Route: Get All Orders
 router.get('/orders', async (req, res) => {
     logger.info("Received request to fetch all orders");
@@ -89,7 +104,6 @@ router.post('/orders/:orderId/status', async (req, res) => {
     const { orderId } = req.params;
     const { status } = req.body;
 
-    // Same logic as PATCH route
     if (!status || !['Pending', 'Delivered', 'Cancelled'].includes(status)) {
         return res.status(400).json({ message: "Invalid or missing status" });
     }
