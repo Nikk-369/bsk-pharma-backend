@@ -235,7 +235,7 @@ router.put('/orders/:orderId/status', async (req, res) => {
 
     try {
         const updatedOrder = await Order.findByIdAndUpdate(
-            orderId ,
+            orderId,
             { status },
             { new: true }
         );
@@ -253,8 +253,6 @@ router.put('/orders/:orderId/status', async (req, res) => {
         res.status(500).json({ message: "Server error", error: error.message });
     }
 });
-
-
 
 router.get('/', (req, res) => {
     res.send("API Working");
