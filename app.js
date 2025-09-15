@@ -56,7 +56,6 @@
 // module.exports = app;
 
 // 2:
-// 2:
 const express = require("express");
 const dotenv = require("dotenv");
 const cors = require("cors");
@@ -77,7 +76,33 @@ dotenv.config();
 connectDB();
 
 const app = express();
-app.use(express.json());
+// app.use(express.json());
+app.use(express.json({ limit: '10mb' }))
+
+
+// const allowedOrigins = [
+//   'https://drbskhealthcare.com',
+//   'http://localhost:3000',
+//   'https://fvvcbrpm-4000.inc1.devtunnels.ms',
+// ];
+
+// app.set('trust proxy', true);
+
+// // Apply CORS middleware
+// app.use(cors({
+//   origin: (origin, cb) => {
+//     if (!origin) return cb(null, true);
+//     if (allowedOrigins.includes(origin)) {
+//       return cb(null, true);
+//     } else {
+//       return cb(new Error('CORS policy: Origin not allowed'), false);
+//     }
+//   },
+//   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+//   allowedHeaders: ['Content-Type', 'Authorization'],
+//   credentials: true,
+// }));
+
 app.use(cors());
 app.set("trust proxy", true);
 app.use('/uploads', express.static('uploads'));
