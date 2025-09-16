@@ -243,9 +243,9 @@ const createAdmin = async (req, res) => {
   try {
     // const { email, name, phone, address, location, role = "User", password } = req.body;
     let { email, name, phone, address, location, role = "User", password } = req.body;
-if (typeof address === "string") {
-  address = [address];
-}
+    if (typeof address === "string") {
+      address = [address];
+    }
 
     const image = req.file ? req.file.filename : null;
 
@@ -289,9 +289,9 @@ const updateAdmin = async (req, res) => {
     const { id } = req.params;
     // const { name, phone, address, location, email, password, role } = req.body;
     let { name, phone, address, location, email, password, role } = req.body;
-if (typeof address === "string") {
-  address = [address];
-}
+    if (typeof address === "string") {
+      address = [address];
+    }
 
     const image = req.file ? req.file.filename : null;
 
