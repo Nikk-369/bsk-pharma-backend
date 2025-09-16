@@ -133,44 +133,62 @@
 // });
 // module.exports = router;
 
-
-// 2: with the use of razorpay
+// // 2: with razorpay integration
 const express = require('express');
 const router = express.Router();
 const Order = require('../models/order');
 const { logger } = require("../utils/logger");
 const Razorpay = require('razorpay');
-const crypto = require('crypto');
 
-// Razorpay API Credentials
-const razorpay = new Razorpay({
-    key_id: 'rzp_live_hgk55iUzVRpKZ1', // Replace with your Razorpay Key ID
-    key_secret: 'SKybR16tyVoO3iDgXfAMs6fA' // Replace with your Razorpay Key Secret
+// Initialize Razorpay instance somewhere globally or per request
+const razorpayInstance = new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID,
+    key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
 
-// Create Order Route
+// option1: Create Order Route
+// router.post('/createOrder', async (req, res) => {
+//     const { userId, items, address, phone, totalAmount, paymentId, razorpayOrderId } = req.body;
+
+//     logger.info("Received createOrder request", { userId, itemCount: items?.length, totalAmount });
+
+//     if (!userId || !items?.length || !address || !phone || !totalAmount) {
+//         logger.warn("Missing required fields in createOrder request", { body: req.body });
+//         return res.status(400).json({ message: "Missing required fields" });
+//     }
+
+//     try {
+//         const newOrder = new Order({ userId, items, address, phone, totalAmount, paymentId, razorpayOrderId });
+
+//         await newOrder.save();
+
+//         logger.info("Order created successfully", { orderId: newOrder._id, userId });
+
+//         res.status(201).json({ message: "Order placed successfully", orderId: newOrder._id });
+//     } catch (error) {
+//         logger.error("Error placing order", { error: error.message, stack: error.stack });
+//         res.status(500).json({ message: "Server error", error: error.message });
+//     }
+// });
+
+// option2: 
 router.post('/createOrder', async (req, res) => {
     const { userId, items, address, phone, totalAmount, paymentId } = req.body;
 
-    logger.info("Received createOrder request", { userId, itemCount: items?.length, totalAmount });
-
     if (!userId || !items?.length || !address || !phone || !totalAmount) {
-        logger.warn("Missing required fields in createOrder request", { body: req.body });
         return res.status(400).json({ message: "Missing required fields" });
     }
 
     try {
-        // Create Razorpay Order
-        const options = {
-            amount: totalAmount * 100, // Amount should be in paise (1 INR = 100 paise)
-            currency: 'INR',
-            receipt: 'order_receipt_' + Math.floor(Math.random() * 1000), // Optional: A unique receipt ID
-        };
+        // 1. Create Razorpay Order via API
+        const razorpayOrder = await razorpayInstance.orders.create({
+            amount: totalAmount * 100,  // amount in paise
+            currency: "INR",
+            receipt: `receipt_order_${Date.now()}`,  // optional, unique ID
+            payment_capture: 1,  // auto capture
+        });
 
-        const razorpayOrder = await razorpay.orders.create(options); // Create Razorpay order
-        logger.info("Razorpay order created successfully", { orderId: razorpayOrder.id });
-
-        // Save order in your database
+        // 2. Save order in your DB with razorpayOrderId
         const newOrder = new Order({
             userId,
             items,
@@ -178,19 +196,18 @@ router.post('/createOrder', async (req, res) => {
             phone,
             totalAmount,
             paymentId,
-            razorpayOrderId: razorpayOrder.id // Save Razorpay order ID
+            razorpayOrderId: razorpayOrder.id,
         });
         await newOrder.save();
-
-        logger.info("Order created successfully", { orderId: newOrder._id, userId });
 
         res.status(201).json({
             message: "Order placed successfully",
             orderId: newOrder._id,
-            razorpayOrderId: razorpayOrder.id // Send Razorpay order ID to the frontend
+            razorpayOrderId: razorpayOrder.id,
+            razorpayOrder,  // optional: send Razorpay order details if frontend needs it
         });
     } catch (error) {
-        logger.error("Error placing order", { error: error.message, stack: error.stack });
+        console.error("Error placing order:", error);
         res.status(500).json({ message: "Server error", error: error.message });
     }
 });
@@ -238,6 +255,7 @@ router.get('/orders', async (req, res) => {
     }
 });
 
+
 // Get Total Order Count
 router.get('/totalOrdercount', async (req, res) => {
     logger.info("Received request to get total order count");
@@ -251,6 +269,7 @@ router.get('/totalOrdercount', async (req, res) => {
         res.status(500).json({ message: "Server error", error: error.message });
     }
 });
+
 
 // Update Order Status by ID
 router.put('/orders/:orderId/status', async (req, res) => {
@@ -294,30 +313,8 @@ router.put('/orders/:orderId/status', async (req, res) => {
 });
 
 
-// Handle Payment Success
-router.post('/payment/success', async (req, res) => {
-  const { orderId, paymentDetails } = req.body;
-
-  try {
-    const order = await Order.findOne({ razorpayOrderId: orderId });
-
-    if (!order) return res.status(404).json({ message: "Order not found" });
-
-    order.status = 'Paid';
-    order.paymentId = paymentDetails.razorpay_payment_id;
-    order.paymentStatus = 'paid';
-    await order.save();
-
-    res.status(200).json({ message: "Payment recorded successfully", order });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-
 router.get('/', (req, res) => {
     res.send("API Working");
 });
-
 module.exports = router;
+
