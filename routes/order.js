@@ -197,6 +197,7 @@ router.post('/createOrder', async (req, res) => {
             totalAmount,
             paymentId,
             razorpayOrderId: razorpayOrder.id,
+            paymentInfo: {},
         });
         await newOrder.save();
 

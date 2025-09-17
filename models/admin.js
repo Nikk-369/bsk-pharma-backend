@@ -10,7 +10,6 @@ const adminSchema = mongoose.Schema(
     phone: { type: String },
     // address: { type: String },
     address: { type: [String], default: [] },
-
     location: { type: String },
     timeStamp: { type: String },
     deleted_at: { type: Date, default: null },

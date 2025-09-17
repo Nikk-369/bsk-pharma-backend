@@ -180,7 +180,7 @@ const handleFileSizeError = (err, req, res, next) => {
 
 const adminLogin = async (req, res) => {
   try {
-    const { email, password, location, ipAddress } = req.body;
+    const { email, password, location, ipAddress, phone } = req.body;
 
     let user = await Admin.findOne({ email });
     let type = 'admin';
@@ -213,7 +213,7 @@ const adminLogin = async (req, res) => {
     if (type === 'admin') {
       await Admin.updateOne(
         { _id: user._id },
-        { ipAddress: userIp, timeStamp: timestamp, location: geoLocation },
+        { ipAddress: userIp, timeStamp: timestamp, location: geoLocation, phone },
         { new: true }
       );
     }
@@ -230,6 +230,7 @@ const adminLogin = async (req, res) => {
         timeStamp: timestamp,
         location: geoLocation,
         type,
+        phone: user.phone,
       },
     });
   } catch (error) {

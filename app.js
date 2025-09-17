@@ -324,8 +324,37 @@ app.post('/api/send-otp', (req, res) => {
 });
 
 // Endpoint to verify OTP
-app.post('/api/verify-otp', (req, res) => {
-  const { email, otp } = req.body;
+// option 1: without phone
+// app.post('/api/verify-otp', (req, res) => {
+//   const { email, otp } = req.body;
+//   if (!email || !otp) {
+//     return res.status(400).json({ message: 'Email and OTP are required' });
+//   }
+
+//   const record = otpStore[email];
+//   if (!record) {
+//     return res.status(400).json({ message: 'OTP not found or expired, please request again' });
+//   }
+
+//   if (Date.now() > record.expires) {
+//     delete otpStore[email];
+//     return res.status(400).json({ message: 'OTP expired, please request again' });
+//   }
+
+//   if (record.otp !== otp) {
+//     return res.status(400).json({ message: 'Invalid OTP' });
+//   }
+
+//   // Successful verification
+//   delete otpStore[email];
+//   res.json({ message: 'OTP verified successfully' });
+// });
+
+
+// option 2: with phone and save user and otp verification
+app.post('/api/verify-otp', async (req, res) => {
+  const { email, otp, name, phone, password, address } = req.body;
+
   if (!email || !otp) {
     return res.status(400).json({ message: 'Email and OTP are required' });
   }
@@ -344,9 +373,49 @@ app.post('/api/verify-otp', (req, res) => {
     return res.status(400).json({ message: 'Invalid OTP' });
   }
 
-  // Successful verification
+  // Clear OTP from store
   delete otpStore[email];
-  res.json({ message: 'OTP verified successfully' });
+
+  try {
+    // Import Admin model at the top of your file
+    const Admin = require('./models/admin');
+    const bcrypt = require('bcryptjs');
+
+    // Check if user already exists
+    let user = await Admin.findOne({ email });
+    if (user) {
+      return res.status(400).json({ message: 'User already exists with this email' });
+    }
+
+    // Hash password before saving
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Create new user
+    user = await Admin.create({
+      name,
+      email,
+      phone,
+      password: hashedPassword,
+      address: Array.isArray(address) ? address : [address],
+      role: 'User',
+      timeStamp: new Date().toISOString()
+    });
+
+    logger.info('User created successfully after OTP verification', { email });
+    res.json({
+      message: 'OTP verified and user created successfully',
+      admin: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role
+      }
+    });
+  } catch (error) {
+    logger.error('Error creating user after OTP verification', { error: error.message });
+    res.status(500).json({ message: 'Error creating user after OTP verification' });
+  }
 });
 
 
