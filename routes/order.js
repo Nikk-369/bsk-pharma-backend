@@ -212,6 +212,49 @@ router.post('/createOrder', async (req, res) => {
     }
 });
 
+// payment status from razorpay
+router.get('/paymentStatus/:orderId', async (req, res) => {
+    const { orderId } = req.params;
+
+    try {
+        // Fetch your order from DB to get razorpayOrderId
+        const order = await Order.findById(orderId);
+        if (!order || !order.razorpayOrderId) {
+            return res.status(404).json({ message: "Order not found or missing Razorpay Order ID" });
+        }
+
+        // Fetch latest Razorpay order details
+        const razorpayOrder = await razorpayInstance.orders.fetch(order.razorpayOrderId);
+
+        // Fetch all payments for this Razorpay order
+        const payments = await razorpayInstance.orders.fetchPayments(order.razorpayOrderId);
+
+        // Get the latest payment (if any)
+        const latestPayment = payments.items.length ? payments.items[0] : null;
+
+        // Update paymentInfo in your order DB
+        if (latestPayment) {
+            order.paymentInfo = {
+                paymentId: latestPayment.id,
+                amount: latestPayment.amount / 100,
+                status: latestPayment.status, // 'captured', 'failed', etc.
+                updatedAt: new Date(),
+            };
+            await order.save();
+        }
+
+        // Return payment info to frontend
+        res.status(200).json({
+            paymentInfo: order.paymentInfo || null,
+            razorpayOrder,
+            razorpayPayments: payments.items,
+        });
+    } catch (error) {
+        console.error("Error fetching payment status:", error);
+        res.status(500).json({ message: "Server error", error: error.message });
+    }
+});
+
 // Get Orders by User ID
 router.get('/orders/:userId', async (req, res) => {
     const { userId } = req.params;
