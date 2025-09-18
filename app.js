@@ -399,7 +399,7 @@ app.post('/api/verify-otp', async (req, res) => {
       phone,
       password: hashedPassword,
       address: Array.isArray(address) ? address : [address],
-      role: 'Admin',
+      role: 'User',
       timeStamp: new Date().toISOString()
     });
 
