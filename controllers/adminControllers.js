@@ -183,6 +183,11 @@ const adminLogin = async (req, res) => {
   try {
     const { email, password, location, ipAddress, phone } = req.body;
 
+    // if (!email || !password) {
+    //   return res.status(400).json({ message: "Email and password are required" });
+    // }
+
+    // Check if user exists
     let user = await Admin.findOne({ email });
     let type = 'admin';
 
@@ -435,7 +440,7 @@ module.exports = {
   deleteAdmin,
   readAllAdmins,
   getImage,
-  adminLogin, // renamed to login
+  adminLogin, 
   getAdminCount,
 };
 
