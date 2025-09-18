@@ -8,7 +8,6 @@ const adminSchema = mongoose.Schema(
     name: { type: String },
     image: { type: String },
     phone: { type: String },
-    // address: { type: String },
     address: { type: [String], default: [] },
     location: { type: String },
     timeStamp: { type: String },
