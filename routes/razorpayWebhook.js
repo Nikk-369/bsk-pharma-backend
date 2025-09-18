@@ -50,7 +50,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
         order.paymentInfo = {
           paymentId,
           amount: eventData.payment.entity.amount / 100,
-          status,  // Razorpay payment status: 'captured', 'failed', 'refunded'
+          status: newStatus,  // Razorpay payment status: 'captured', 'failed', 'refunded'
           updatedAt: new Date(),
         };
         await order.save();

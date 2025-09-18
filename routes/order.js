@@ -175,8 +175,31 @@ const razorpayInstance = new Razorpay({
 router.post('/createOrder', async (req, res) => {
     const { userId, items, address, phone, totalAmount, paymentId } = req.body;
 
-    if (!userId || !items?.length || !address || !phone || !totalAmount) {
-        return res.status(400).json({ message: "Missing required fields" });
+    // Debug log to see what's being received
+    console.log("Received createOrder request:", {
+        userId: !!userId,
+        items: items?.length,
+        address: !!address,
+        phone: !!phone,
+        totalAmount: !!totalAmount,
+        paymentId: !!paymentId
+    });
+
+    // Better validation with specific error messages
+    if (!userId) {
+        return res.status(400).json({ message: "Missing required field: userId" });
+    }
+    if (!items?.length) {
+        return res.status(400).json({ message: "Missing required field: items" });
+    }
+    if (!address) {
+        return res.status(400).json({ message: "Missing required field: address" });
+    }
+    if (!phone) {
+        return res.status(400).json({ message: "Missing required field: phone" });
+    }
+    if (!totalAmount) {
+        return res.status(400).json({ message: "Missing required field: totalAmount" });
     }
 
     try {
@@ -201,6 +224,8 @@ router.post('/createOrder', async (req, res) => {
         });
         await newOrder.save();
 
+        console.log("Order created with razorpayOrderId:", razorpayOrder.id);
+
         res.status(201).json({
             message: "Order placed successfully",
             orderId: newOrder._id,
@@ -220,8 +245,21 @@ router.get('/paymentStatus/:orderId', async (req, res) => {
     try {
         // Fetch your order from DB to get razorpayOrderId
         const order = await Order.findById(orderId);
-        if (!order || !order.razorpayOrderId) {
-            return res.status(404).json({ message: "Order not found or missing Razorpay Order ID" });
+        if (!order) {
+            return res.status(404).json({ message: "Order not found" });
+        }
+
+        // If no razorpayOrderId, return the existing paymentInfo or default
+        if (!order.razorpayOrderId) {
+            return res.status(200).json({
+                paymentInfo: order.paymentInfo || {
+                    status: 'pending',
+                    amount: order.totalAmount,
+                    paymentId: order.paymentId || null
+                },
+                razorpayOrder: null,
+                razorpayPayments: []
+            });
         }
 
         // Fetch latest Razorpay order details
@@ -252,6 +290,53 @@ router.get('/paymentStatus/:orderId', async (req, res) => {
         });
     } catch (error) {
         console.error("Error fetching payment status:", error);
+        res.status(500).json({ message: "Server error", error: error.message });
+    }
+});
+
+// Check payment status by Razorpay Order ID (as suggested by Razorpay support)
+router.get('/checkPaymentStatus/:razorpayOrderId', async (req, res) => {
+    const { razorpayOrderId } = req.params;
+
+    try {
+        // Fetch Razorpay order details
+        const razorpayOrder = await razorpayInstance.orders.fetch(razorpayOrderId);
+
+        // Fetch all payments for this Razorpay order
+        const payments = await razorpayInstance.orders.fetchPayments(razorpayOrderId);
+
+        // Get the latest payment (if any)
+        const latestPayment = payments.items.length ? payments.items[0] : null;
+
+        // Find the order in our database
+        const order = await Order.findOne({ razorpayOrderId: razorpayOrderId });
+
+        // Update paymentInfo in your order DB if payment exists
+        if (latestPayment && order) {
+            order.paymentInfo = {
+                paymentId: latestPayment.id,
+                amount: latestPayment.amount / 100,
+                status: latestPayment.status, // 'captured', 'failed', etc.
+                updatedAt: new Date(),
+            };
+            await order.save();
+        }
+
+        // Return comprehensive payment info
+        res.status(200).json({
+            razorpayOrder,
+            paymentInfo: latestPayment ? {
+                paymentId: latestPayment.id,
+                amount: latestPayment.amount / 100,
+                status: latestPayment.status,
+                method: latestPayment.method,
+                createdAt: latestPayment.created_at,
+            } : null,
+            allPayments: payments.items,
+            orderStatus: order ? order.status : null,
+        });
+    } catch (error) {
+        console.error("Error checking payment status:", error);
         res.status(500).json({ message: "Server error", error: error.message });
     }
 });
@@ -315,6 +400,38 @@ router.get('/totalOrdercount', async (req, res) => {
 });
 
 
+// Update Order Payment Info - using a simpler route
+router.put('/updatePayment/:orderId', async (req, res) => {
+    const { orderId } = req.params;
+    const { paymentId, razorpayOrderId } = req.body;
+
+    console.log("Payment update route hit:", { orderId, paymentId, razorpayOrderId });
+    logger.info("Received request to update order payment", { orderId, paymentId });
+
+    try {
+        const updatedOrder = await Order.updateOne(
+            { _id: orderId },
+            {
+                $set: {
+                    paymentId: paymentId,
+                    razorpayOrderId: razorpayOrderId
+                }
+            }
+        );
+
+        if (updatedOrder.matchedCount === 0) {
+            logger.warn("Order not found for payment update", { orderId });
+            return res.status(404).json({ message: "Order not found" });
+        }
+
+        logger.info("Order payment updated successfully", { orderId, paymentId });
+        res.status(200).json({ message: "Order payment updated successfully" });
+    } catch (error) {
+        logger.error("Error updating order payment", { error: error.message, stack: error.stack });
+        res.status(500).json({ message: "Server error", error: error.message });
+    }
+});
+
 // Update Order Status by ID
 router.put('/orders/:orderId/status', async (req, res) => {
     const { orderId } = req.params;
@@ -356,6 +473,16 @@ router.put('/orders/:orderId/status', async (req, res) => {
     }
 });
 
+
+// Test route to check if payment route is working
+router.get('/test-payment-route', (req, res) => {
+    res.json({ message: "Payment route is working" });
+});
+
+// Test route for updatePayment
+router.get('/test-update-payment', (req, res) => {
+    res.json({ message: "Update payment route is working" });
+});
 
 router.get('/', (req, res) => {
     res.send("API Working");
