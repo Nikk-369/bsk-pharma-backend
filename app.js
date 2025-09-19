@@ -67,6 +67,8 @@ const orderRoutes = require("./routes/order");
 const nodemailer = require('nodemailer');
 const razorpayWebhookRouter = require('./routes/razorpayWebhook');
 
+console.log('Admin routes loaded:', typeof adminRoutes);
+
 // In-memory OTP store (for demo; switch to DB or cache in production)
 const otpStore = {};
 
@@ -265,7 +267,8 @@ app.post('/api/verify-otp', async (req, res) => {
   }
 });
 
-
+// debug log to check mongo is working or not:
+// console.log('MongoDB URI:', process.env.MONGO_URI || 'Not set');
 
 // Logs API endpoint
 app.get("/api/logs", (req, res) => {

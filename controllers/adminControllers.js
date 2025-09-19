@@ -10,6 +10,14 @@ const WholesalePartner = require("../models/wholeSale");
 
 require("dotenv").config();
 
+
+const findUser = async (email) => {
+  const admin = await Admin.findOne({ email });
+  if (admin) return { type: "admins", user: admin };
+  return null;
+};
+
+
 // const DEFAULT_PASSWORD = "Admin@123";
 
 // const transporter = nodemailer.createTransport({
@@ -19,13 +27,6 @@ require("dotenv").config();
 //     pass: process.env.EMAIL_PASSWORD,
 //   },
 // });
-
-const findUser = async (email) => {
-  const admin = await Admin.findOne({ email });
-  if (admin) return { type: "admins", user: admin };
-  return null;
-};
-
 
 
 // const forgotPassword = async (req, res) => {
@@ -182,6 +183,7 @@ const adminLogin = async (req, res) => {
   try {
     const { email, password, location, ipAddress, phone } = req.body;
 
+    // Check if user exists
     let user = await Admin.findOne({ email });
     let type = 'admin';
 
@@ -434,7 +436,7 @@ module.exports = {
   deleteAdmin,
   readAllAdmins,
   getImage,
-  adminLogin, // renamed to login
+  adminLogin, 
   getAdminCount,
 };
 
