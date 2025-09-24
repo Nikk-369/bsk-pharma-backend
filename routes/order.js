@@ -228,7 +228,6 @@
 // module.exports = router;
 
 // // payment tracking:
-// routes/order.js - Enhanced with automatic refund processing
 const express = require('express');
 const router = express.Router();
 const Order = require('../models/order');
@@ -278,7 +277,7 @@ router.post('/createOrder', async (req, res) => {
             amount: totalAmount * 100,  // amount in paise
             currency: "INR",
             receipt: `receipt_order_${Date.now()}`,
-            payment_capture: 1,
+            payment_capture: 1, // Auto capture enabled
         });
 
         // Save order in your DB with razorpayOrderId
@@ -290,7 +289,11 @@ router.post('/createOrder', async (req, res) => {
             totalAmount,
             paymentId,
             razorpayOrderId: razorpayOrder.id,
-            paymentInfo: {},
+            paymentInfo: {
+                status: 'created',
+                amount: totalAmount,
+                updatedAt: new Date()
+            },
         });
         await newOrder.save();
 
@@ -308,7 +311,7 @@ router.post('/createOrder', async (req, res) => {
     }
 });
 
-// Enhanced payment status route
+// Enhanced payment status route with better error handling
 router.get('/paymentStatus/:orderId', async (req, res) => {
     const { orderId } = req.params;
 
@@ -331,49 +334,125 @@ router.get('/paymentStatus/:orderId', async (req, res) => {
             });
         }
 
-        // Fetch latest Razorpay order details
-        const razorpayOrder = await razorpayInstance.orders.fetch(order.razorpayOrderId);
+        try {
+            // Fetch latest Razorpay order details
+            const razorpayOrder = await razorpayInstance.orders.fetch(order.razorpayOrderId);
 
-        // Fetch all payments for this Razorpay order
-        const payments = await razorpayInstance.orders.fetchPayments(order.razorpayOrderId);
+            // Fetch all payments for this Razorpay order
+            const payments = await razorpayInstance.orders.fetchPayments(order.razorpayOrderId);
 
-        // Get the latest payment (if any)
-        const latestPayment = payments.items.length ? payments.items[0] : null;
+            // Get the latest payment (if any)
+            const latestPayment = payments.items.length ? payments.items[0] : null;
 
-        // Update paymentInfo in your order DB
-        if (latestPayment) {
-            order.paymentInfo = {
-                paymentId: latestPayment.id,
-                amount: latestPayment.amount / 100,
-                status: latestPayment.status,
-                updatedAt: new Date(),
-            };
-            await order.save();
-        }
-
-        // If order is cancelled and payment was captured, check for refunds
-        let refundData = null;
-        if (order.status === 'Cancelled' && latestPayment && latestPayment.status === 'captured') {
-            try {
-                const refunds = await razorpayInstance.payments.fetchMultipleRefund(latestPayment.id);
-                if (refunds.items.length > 0) {
-                    refundData = refunds.items[0]; // Get latest refund
-                }
-            } catch (refundError) {
-                console.log('No refunds found for this payment');
+            // Update paymentInfo in your order DB
+            if (latestPayment) {
+                order.paymentInfo = {
+                    paymentId: latestPayment.id,
+                    amount: latestPayment.amount / 100,
+                    status: latestPayment.status,
+                    method: latestPayment.method,
+                    updatedAt: new Date(),
+                };
+                await order.save();
+            } else {
+                // No payment found, but order exists
+                order.paymentInfo = {
+                    ...order.paymentInfo,
+                    status: 'created',
+                    updatedAt: new Date()
+                };
+                await order.save();
             }
+
+            // If order is cancelled and payment was captured, check for refunds
+            let refundData = null;
+            if (order.status === 'Cancelled' && latestPayment && latestPayment.status === 'captured') {
+                try {
+                    const refunds = await razorpayInstance.payments.fetchMultipleRefund(latestPayment.id);
+                    if (refunds.items.length > 0) {
+                        refundData = refunds.items[0]; // Get latest refund
+                    }
+                } catch (refundError) {
+                    console.log('No refunds found for this payment');
+                }
+            }
+
+            res.status(200).json({
+                paymentInfo: order.paymentInfo || null,
+                refundInfo: order.refundInfo || null,
+                refundData,
+                razorpayOrder,
+                razorpayPayments: payments.items,
+            });
+
+        } catch (razorpayError) {
+            console.error("Razorpay API error:", razorpayError);
+            // Return order data even if Razorpay API fails
+            res.status(200).json({
+                paymentInfo: order.paymentInfo || {
+                    status: 'unknown',
+                    amount: order.totalAmount
+                },
+                refundInfo: order.refundInfo || null,
+                refundData: null,
+                razorpayOrder: null,
+                razorpayPayments: [],
+                error: 'Unable to fetch latest payment status from Razorpay'
+            });
         }
 
-        res.status(200).json({
-            paymentInfo: order.paymentInfo || null,
-            refundInfo: order.refundInfo || null,
-            refundData,
-            razorpayOrder,
-            razorpayPayments: payments.items,
-        });
     } catch (error) {
         console.error("Error fetching payment status:", error);
         res.status(500).json({ message: "Server error", error: error.message });
+    }
+});
+
+// New route to manually capture payment (for admin)
+router.post('/capturePayment/:orderId', async (req, res) => {
+    const { orderId } = req.params;
+    const { amount } = req.body; // Optional: partial capture
+
+    try {
+        const order = await Order.findById(orderId);
+        if (!order) {
+            return res.status(404).json({ message: "Order not found" });
+        }
+
+        if (!order.paymentInfo?.paymentId) {
+            return res.status(400).json({ message: "No payment ID found for this order" });
+        }
+
+        // Capture the payment
+        const captureAmount = amount ? amount * 100 : order.totalAmount * 100;
+        const capturedPayment = await razorpayInstance.payments.capture(
+            order.paymentInfo.paymentId, 
+            captureAmount,
+            "INR"
+        );
+
+        // Update order with captured payment info
+        order.paymentInfo = {
+            ...order.paymentInfo,
+            status: 'captured',
+            amount: capturedPayment.amount / 100,
+            updatedAt: new Date()
+        };
+        await order.save();
+
+        logger.info("Payment captured successfully", {
+            orderId,
+            paymentId: order.paymentInfo.paymentId,
+            amount: capturedPayment.amount / 100
+        });
+
+        res.status(200).json({
+            message: "Payment captured successfully",
+            paymentInfo: order.paymentInfo
+        });
+
+    } catch (error) {
+        logger.error("Error capturing payment", { orderId, error: error.message });
+        res.status(500).json({ message: "Failed to capture payment", error: error.message });
     }
 });
 
@@ -399,7 +478,8 @@ router.get('/checkPaymentStatus/:razorpayOrderId', async (req, res) => {
             order.paymentInfo = {
                 paymentId: latestPayment.id,
                 amount: latestPayment.amount / 100,
-                status: latestPayment.status, // 'captured', 'failed', etc.
+                status: latestPayment.status, // 'captured', 'failed', 'authorized', etc.
+                method: latestPayment.method,
                 updatedAt: new Date(),
             };
             await order.save();
@@ -424,7 +504,7 @@ router.get('/checkPaymentStatus/:razorpayOrderId', async (req, res) => {
     }
 });
 
-// Get Orders by User ID
+// Get Orders by User ID with live payment status
 router.get('/orders/:userId', async (req, res) => {
     const { userId } = req.params;
 
@@ -433,9 +513,30 @@ router.get('/orders/:userId', async (req, res) => {
     try {
         const orders = await Order.find({ userId }).sort({ createdAt: -1 });
 
-        // For each order, fetch latest refund info if applicable
-        const ordersWithRefundInfo = await Promise.all(
+        // For each order, fetch latest payment and refund info
+        const ordersWithLiveInfo = await Promise.all(
             orders.map(async (order) => {
+                // Fetch live payment status if razorpayOrderId exists
+                if (order.razorpayOrderId) {
+                    try {
+                        const payments = await razorpayInstance.orders.fetchPayments(order.razorpayOrderId);
+                        const latestPayment = payments.items.length ? payments.items[0] : null;
+                        
+                        if (latestPayment) {
+                            order.paymentInfo = {
+                                paymentId: latestPayment.id,
+                                amount: latestPayment.amount / 100,
+                                status: latestPayment.status,
+                                method: latestPayment.method,
+                                updatedAt: new Date()
+                            };
+                        }
+                    } catch (paymentError) {
+                        console.log('Error fetching payment for order:', order._id, paymentError.message);
+                    }
+                }
+
+                // Fetch refund info if applicable
                 if (order.status === 'Cancelled' && order.refundInfo?.refundId) {
                     try {
                         const refundDetails = await razorpayInstance.refunds.fetch(order.refundInfo.refundId);
@@ -452,7 +553,7 @@ router.get('/orders/:userId', async (req, res) => {
         );
 
         res.status(200).json({
-            orders: ordersWithRefundInfo,
+            orders: ordersWithLiveInfo,
             totalCount: orders.length
         });
     } catch (error) {
@@ -467,14 +568,40 @@ router.get('/orders/:userId', async (req, res) => {
     }
 });
 
-// Get All Orders (for admin)
+// Get All Orders (for admin) with live payment status
 router.get('/orders', async (req, res) => {
     logger.info("Received request to fetch all orders");
 
     try {
         const orders = await Order.find().sort({ createdAt: -1 });
-        logger.info("Fetched all orders", { totalOrders: orders.length });
-        res.status(200).json({ orders });
+        
+        // Fetch live payment status for all orders
+        const ordersWithLiveStatus = await Promise.all(
+            orders.map(async (order) => {
+                if (order.razorpayOrderId) {
+                    try {
+                        const payments = await razorpayInstance.orders.fetchPayments(order.razorpayOrderId);
+                        const latestPayment = payments.items.length ? payments.items[0] : null;
+                        
+                        if (latestPayment) {
+                            order.paymentInfo = {
+                                paymentId: latestPayment.id,
+                                amount: latestPayment.amount / 100,
+                                status: latestPayment.status,
+                                method: latestPayment.method,
+                                updatedAt: new Date()
+                            };
+                        }
+                    } catch (paymentError) {
+                        console.log('Error fetching payment for order:', order._id);
+                    }
+                }
+                return order;
+            })
+        );
+        
+        logger.info("Fetched all orders with live payment status", { totalOrders: orders.length });
+        res.status(200).json({ orders: ordersWithLiveStatus });
     } catch (error) {
         logger.error("Error fetching all orders", { error: error.message, stack: error.stack });
         res.status(500).json({ message: "Server error", error: error.message });
@@ -513,6 +640,27 @@ router.put('/orders/:orderId/status', async (req, res) => {
         if (!order) {
             logger.warn("Order not found for status update", { orderId });
             return res.status(404).json({ message: "Order not found" });
+        }
+
+        // Fetch latest payment status before proceeding
+        if (order.razorpayOrderId && !order.paymentInfo?.paymentId) {
+            try {
+                const payments = await razorpayInstance.orders.fetchPayments(order.razorpayOrderId);
+                const latestPayment = payments.items.length ? payments.items[0] : null;
+                
+                if (latestPayment) {
+                    order.paymentInfo = {
+                        paymentId: latestPayment.id,
+                        amount: latestPayment.amount / 100,
+                        status: latestPayment.status,
+                        method: latestPayment.method,
+                        updatedAt: new Date()
+                    };
+                    await order.save();
+                }
+            } catch (paymentError) {
+                console.log('Error fetching payment status before update:', paymentError.message);
+            }
         }
 
         // If cancelling order, process refund automatically
@@ -555,9 +703,28 @@ router.put('/orders/:orderId/status', async (req, res) => {
 // Function to process automatic refund
 async function processAutomaticRefund(order, cancelReason) {
     try {
-        // Check if payment exists and is captured
-        if (!order.paymentInfo?.paymentId || order.paymentInfo?.status !== 'captured') {
-            return { success: false, reason: 'Payment not captured or payment ID missing' };
+        // Check if payment exists and is captured or authorized
+        if (!order.paymentInfo?.paymentId) {
+            return { success: false, reason: 'Payment ID missing' };
+        }
+
+        if (!['captured', 'authorized'].includes(order.paymentInfo?.status)) {
+            return { success: false, reason: 'Payment not captured or authorized' };
+        }
+
+        // If payment is authorized but not captured, we need to capture first then refund
+        if (order.paymentInfo.status === 'authorized') {
+            try {
+                await razorpayInstance.payments.capture(
+                    order.paymentInfo.paymentId, 
+                    order.totalAmount * 100,
+                    "INR"
+                );
+                logger.info("Payment captured for refund", { orderId: order._id });
+            } catch (captureError) {
+                logger.error("Failed to capture payment for refund", { error: captureError.message });
+                return { success: false, reason: 'Failed to capture payment before refund' };
+            }
         }
 
         // Create refund with Razorpay
@@ -617,8 +784,25 @@ router.post('/orders/:orderId/refund', async (req, res) => {
             return res.status(404).json({ message: "Order not found" });
         }
 
-        if (!order.paymentInfo?.paymentId || order.paymentInfo?.status !== 'captured') {
-            return res.status(400).json({ message: "Payment not captured or payment ID missing" });
+        if (!order.paymentInfo?.paymentId) {
+            return res.status(400).json({ message: "Payment ID missing" });
+        }
+
+        if (!['captured', 'authorized'].includes(order.paymentInfo?.status)) {
+            return res.status(400).json({ message: "Payment not captured or authorized" });
+        }
+
+        // If payment is authorized, capture it first
+        if (order.paymentInfo.status === 'authorized') {
+            try {
+                await razorpayInstance.payments.capture(
+                    order.paymentInfo.paymentId, 
+                    order.totalAmount * 100,
+                    "INR"
+                );
+            } catch (captureError) {
+                return res.status(400).json({ message: "Failed to capture payment before refund" });
+            }
         }
 
         const refundAmount = amount || order.totalAmount;
