@@ -990,14 +990,13 @@ router.post('/createOrder', async (req, res) => {
     }
 });
 
-// Update Order Status with GUARANTEED Refund Processing
+// // Update Order Status with PROPER Refund Processing
 router.put('/orders/:orderId/status', async (req, res) => {
     const { orderId } = req.params;
     const { status, cancelReason } = req.body;
 
-    console.log("updated Order ID:", orderId);
-    console.log("updated New Status:", status);
-    console.log("updated Cancel Reason:", cancelReason);
+    console.log("=== UPDATE ORDER STATUS ===");
+    console.log("Order ID:", orderId, "New Status:", status, "Reason:", cancelReason);
 
     if (!['Pending', 'Delivered', 'Cancelled'].includes(status)) {
         return res.status(400).json({
@@ -1015,143 +1014,87 @@ router.put('/orders/:orderId/status', async (req, res) => {
             });
         }
 
-        console.log("Found order:", {
-            id: order._id,
-            currentStatus: order.status,
-            paymentStatus: order.paymentInfo?.status,
-            paymentId: order.paymentInfo?.paymentId,
-            totalAmount: order.totalAmount
-        });
-
         let refundProcessed = false;
         let refundDetails = null;
 
-        // CRITICAL: Process refund when admin cancels AND payment is captured
+        // FIXED: Only process refund when admin cancels AND payment is captured
         if (status === 'Cancelled' && order.status !== 'Cancelled') {
-            console.log("🔍 Order is being cancelled - checking for refund eligibility...");
+            console.log("🔍 Checking if refund should be processed...");
+            console.log("Payment Info:", order.paymentInfo);
 
             // Check if payment exists and is captured
             if (order.paymentInfo?.paymentId && order.paymentInfo?.status === 'captured') {
-                console.log("💰 Payment is captured - initiating automatic refund");
-                console.log("Payment ID:", order.paymentInfo.paymentId);
-                console.log("Amount to refund:", order.totalAmount);
+                console.log("💰 Processing automatic refund for cancelled order");
 
                 try {
-                    // IMPORTANT: For small amounts, Razorpay charges fees
-                    // For amounts less than ₹10, consider not processing automatic refund
-                    if (order.totalAmount < 10) {
-                        console.log("⚠️ Small amount detected - Razorpay fees may exceed refund amount");
-                        console.log("Refund amount: ₹", order.totalAmount);
-                        console.log("Expected fees: ₹10+");
-
-                        // Still process the refund but warn about fees
-                        const confirmRefund = true; // In production, you might want admin confirmation
-
-                        if (!confirmRefund) {
-                            console.log("❌ Refund cancelled due to high fees");
-                            order.status = 'Cancelled';
-                            order.cancelReason = `${cancelReason} (No refund - fees exceed amount)`;
-                            order.cancelledBy = 'admin';
-                            order.cancelledAt = new Date();
-
-                            await order.save();
-
-                            return res.status(200).json({
-                                success: true,
-                                message: "Order cancelled. Refund not processed due to high processing fees.",
-                                order: order,
-                                refundProcessed: false,
-                                feeWarning: true
-                            });
-                        }
-                    }
-
-                    // Process the refund via Razorpay API
-                    console.log("🔄 Calling Razorpay refund API...");
                     const refund = await razorpayInstance.payments.refund(
                         order.paymentInfo.paymentId,
                         {
-                            amount: Math.round(order.totalAmount * 100), // Convert to paise
+                            amount: Math.round(order.totalAmount * 100), // Amount in paise
                             speed: 'optimum',
                             notes: {
                                 reason: cancelReason || 'Order cancelled by admin',
                                 orderId: order._id.toString(),
-                                cancelledBy: 'admin',
-                                originalAmount: order.totalAmount
+                                cancelledBy: 'admin'
                             },
                             receipt: `refund_${order._id}_${Date.now()}`
                         }
                     );
 
-                    console.log("✅ Refund API call successful:");
-                    console.log("Refund ID:", refund.id);
-                    console.log("Refund Amount:", refund.amount / 100);
-                    console.log("Refund Status:", refund.status);
+                    console.log("✅ Refund initiated successfully:", refund.id);
 
-                    // Calculate estimated settlement date (5-7 days for optimum speed)
+                    // Calculate estimated settlement date (5 days for optimum speed)
                     const estimatedSettlement = new Date();
                     estimatedSettlement.setDate(estimatedSettlement.getDate() + 5);
 
-                    // Update order with refund information
+                    // Update order with refund info
                     order.refundInfo = {
                         refundId: refund.id,
                         amount: refund.amount / 100, // Convert from paise to rupees
-                        status: 'initiated', // Razorpay returns 'pending' initially, we set as 'initiated'
+                        status: 'initiated',
                         reason: cancelReason || 'Order cancelled by admin',
                         initiatedAt: new Date(),
                         estimatedSettlement: estimatedSettlement,
                         speed: 'optimum',
-                        notes: `Automatic refund processed on order cancellation by admin`
+                        notes: `Refund processed automatically on order cancellation`
                     };
 
                     refundProcessed = true;
                     refundDetails = order.refundInfo;
 
-                    console.log("💾 Updated refund info in order:");
-                    console.log(JSON.stringify(order.refundInfo, null, 2));
-
                     logger.info("Refund initiated successfully", {
                         orderId: order._id,
                         refundId: refund.id,
                         amount: refund.amount / 100,
-                        paymentId: order.paymentInfo.paymentId,
-                        reason: cancelReason
+                        paymentId: order.paymentInfo.paymentId
                     });
 
                 } catch (refundError) {
-                    console.error("❌ Refund API call failed:");
-                    console.error("Error message:", refundError.message);
-                    console.error("Error code:", refundError.error?.code);
-                    console.error("Full error:", refundError);
-
+                    console.error("❌ Refund failed:", refundError);
                     logger.error("Refund processing failed", {
                         orderId,
                         paymentId: order.paymentInfo.paymentId,
                         error: refundError.message,
-                        errorCode: refundError.error?.code,
-                        amount: order.totalAmount
+                        errorCode: refundError.error?.code
                     });
 
-                    // Set refund as failed but still cancel the order
+                    // Set refund as failed
                     order.refundInfo = {
                         refundId: null,
                         amount: order.totalAmount,
                         status: 'failed',
                         reason: `Refund failed: ${refundError.message}`,
                         failedAt: new Date(),
-                        notes: 'Automatic refund failed - admin should process manual refund via Razorpay dashboard'
+                        notes: 'Admin needs to process manual refund'
                     };
-
-                    console.log("⚠️ Refund failed but order will still be cancelled");
                 }
             } else {
-                console.log("ℹ️ No refund needed:");
-                console.log("- Payment ID exists:", !!order.paymentInfo?.paymentId);
-                console.log("- Payment status:", order.paymentInfo?.status);
-                console.log("- Payment captured:", order.paymentInfo?.status === 'captured');
+                console.log("⚠️ No refund needed - payment not captured or doesn't exist");
+                console.log("Payment Status:", order.paymentInfo?.status);
+                console.log("Payment ID:", order.paymentInfo?.paymentId);
             }
 
-            // Update cancellation details regardless of refund success/failure
+            // Update cancellation details
             order.status = 'Cancelled';
             order.cancelReason = cancelReason || 'Cancelled by admin';
             order.cancelledBy = 'admin';
@@ -1159,24 +1102,16 @@ router.put('/orders/:orderId/status', async (req, res) => {
 
         } else {
             // Regular status update (non-cancellation)
-            console.log("📝 Regular status update to:", status);
             order.status = status;
         }
 
-        // Save the order with all updates
         await order.save();
-        console.log("💾 Order saved successfully");
+
+        console.log("✅ Order status updated successfully");
 
         const responseMessage = status === 'Cancelled'
-            ? `Order cancelled successfully! ${refundProcessed
-                ? `Automatic refund of ₹${refundDetails?.amount} has been initiated. Refund ID: ${refundDetails?.refundId}. Settlement expected in 5-7 business days.`
-                : order.refundInfo?.status === 'failed'
-                    ? 'Automatic refund failed - please process manual refund via Razorpay dashboard.'
-                    : 'No refund needed - payment was not captured.'
-            }`
+            ? `Order cancelled successfully! ${refundProcessed ? 'Automatic refund has been initiated and will be processed within 5-7 business days.' : 'No refund needed - payment was not captured.'}`
             : 'Order status updated successfully';
-
-        console.log("📤 Sending response:", responseMessage);
 
         res.status(200).json({
             success: true,
@@ -1195,11 +1130,7 @@ router.put('/orders/:orderId/status', async (req, res) => {
 
     } catch (error) {
         console.error("❌ Error updating order status:", error);
-        logger.error("Error updating order status", {
-            orderId,
-            error: error.message,
-            stack: error.stack
-        });
+        logger.error("Error updating order status", { orderId, error: error.message });
 
         res.status(500).json({
             success: false,
@@ -1208,6 +1139,229 @@ router.put('/orders/:orderId/status', async (req, res) => {
         });
     }
 });
+
+// // 2:
+// Update Order Status with GUARANTEED Refund Processing
+// router.put('/orders/:orderId/status', async (req, res) => {
+//     const { orderId } = req.params;
+//     const { status, cancelReason } = req.body;
+
+//     console.log("=== UPDATE ORDER STATUS ===");
+//     console.log("Order ID:", orderId);
+//     console.log("New Status:", status);
+//     console.log("Cancel Reason:", cancelReason);
+
+//     if (!['Pending', 'Delivered', 'Cancelled'].includes(status)) {
+//         return res.status(400).json({ 
+//             success: false, 
+//             message: "Invalid status. Must be Pending, Delivered, or Cancelled" 
+//         });
+//     }
+
+//     try {
+//         const order = await Order.findById(orderId);
+//         if (!order) {
+//             return res.status(404).json({ 
+//                 success: false, 
+//                 message: "Order not found" 
+//             });
+//         }
+
+//         console.log("Found order:", {
+//             id: order._id,
+//             currentStatus: order.status,
+//             paymentStatus: order.paymentInfo?.status,
+//             paymentId: order.paymentInfo?.paymentId,
+//             totalAmount: order.totalAmount
+//         });
+
+//         let refundProcessed = false;
+//         let refundDetails = null;
+
+//         // CRITICAL: Process refund when admin cancels AND payment is captured
+//         if (status === 'Cancelled' && order.status !== 'Cancelled') {
+//             console.log(" Order is being cancelled - checking for refund eligibility...");
+            
+//             // Check if payment exists and is captured
+//             if (order.paymentInfo?.paymentId && order.paymentInfo?.status === 'captured') {
+//                 console.log("💰 Payment is captured - initiating automatic refund");
+//                 console.log("Payment ID:", order.paymentInfo.paymentId);
+//                 console.log("Amount to refund:", order.totalAmount);
+                
+//                 try {
+//                     // IMPORTANT: For small amounts, Razorpay charges fees
+//                     // For amounts less than ₹10, consider not processing automatic refund
+//                     if (order.totalAmount < 10) {
+//                         console.log("⚠️ Small amount detected - Razorpay fees may exceed refund amount");
+//                         console.log("Refund amount: ₹", order.totalAmount);
+//                         console.log("Expected fees: ₹10+");
+                        
+//                         // Still process the refund but warn about fees
+//                         const confirmRefund = true; // In production, you might want admin confirmation
+                        
+//                         if (!confirmRefund) {
+//                             console.log("❌ Refund cancelled due to high fees");
+//                             order.status = 'Cancelled';
+//                             order.cancelReason = `${cancelReason} (No refund - fees exceed amount)`;
+//                             order.cancelledBy = 'admin';
+//                             order.cancelledAt = new Date();
+                            
+//                             await order.save();
+                            
+//                             return res.status(200).json({
+//                                 success: true,
+//                                 message: "Order cancelled. Refund not processed due to high processing fees.",
+//                                 order: order,
+//                                 refundProcessed: false,
+//                                 feeWarning: true
+//                             });
+//                         }
+//                     }
+
+//                     // Process the refund via Razorpay API
+//                     console.log("🔄 Calling Razorpay refund API...");
+//                     const refund = await razorpayInstance.payments.refund(
+//                         order.paymentInfo.paymentId,
+//                         {
+//                             amount: Math.round(order.totalAmount * 100), // Convert to paise
+//                             speed: 'optimum',
+//                             notes: {
+//                                 reason: cancelReason || 'Order cancelled by admin',
+//                                 orderId: order._id.toString(),
+//                                 cancelledBy: 'admin',
+//                                 originalAmount: order.totalAmount
+//                             },
+//                             receipt: `refund_${order._id}_${Date.now()}`
+//                         }
+//                     );
+
+//                     console.log("✅ Refund API call successful:");
+//                     console.log("Refund ID:", refund.id);
+//                     console.log("Refund Amount:", refund.amount / 100);
+//                     console.log("Refund Status:", refund.status);
+
+//                     // Calculate estimated settlement date (5-7 days for optimum speed)
+//                     const estimatedSettlement = new Date();
+//                     estimatedSettlement.setDate(estimatedSettlement.getDate() + 5);
+
+//                     // Update order with refund information
+//                     order.refundInfo = {
+//                         refundId: refund.id,
+//                         amount: refund.amount / 100, // Convert from paise to rupees
+//                         status: 'initiated', // Razorpay returns 'pending' initially, we set as 'initiated'
+//                         reason: cancelReason || 'Order cancelled by admin',
+//                         initiatedAt: new Date(),
+//                         estimatedSettlement: estimatedSettlement,
+//                         speed: 'optimum',
+//                         notes: `Automatic refund processed on order cancellation by admin`
+//                     };
+
+//                     refundProcessed = true;
+//                     refundDetails = order.refundInfo;
+
+//                     console.log("💾 Updated refund info in order:");
+//                     console.log(JSON.stringify(order.refundInfo, null, 2));
+
+//                     logger.info("Refund initiated successfully", {
+//                         orderId: order._id,
+//                         refundId: refund.id,
+//                         amount: refund.amount / 100,
+//                         paymentId: order.paymentInfo.paymentId,
+//                         reason: cancelReason
+//                     });
+
+//                 } catch (refundError) {
+//                     console.error("❌ Refund API call failed:");
+//                     console.error("Error message:", refundError.message);
+//                     console.error("Error code:", refundError.error?.code);
+//                     console.error("Full error:", refundError);
+                    
+//                     logger.error("Refund processing failed", {
+//                         orderId,
+//                         paymentId: order.paymentInfo.paymentId,
+//                         error: refundError.message,
+//                         errorCode: refundError.error?.code,
+//                         amount: order.totalAmount
+//                     });
+                    
+//                     // Set refund as failed but still cancel the order
+//                     order.refundInfo = {
+//                         refundId: null,
+//                         amount: order.totalAmount,
+//                         status: 'failed',
+//                         reason: `Refund failed: ${refundError.message}`,
+//                         failedAt: new Date(),
+//                         notes: 'Automatic refund failed - admin should process manual refund via Razorpay dashboard'
+//                     };
+
+//                     console.log("⚠️ Refund failed but order will still be cancelled");
+//                 }
+//             } else {
+//                 console.log("ℹ️ No refund needed:");
+//                 console.log("- Payment ID exists:", !!order.paymentInfo?.paymentId);
+//                 console.log("- Payment status:", order.paymentInfo?.status);
+//                 console.log("- Payment captured:", order.paymentInfo?.status === 'captured');
+//             }
+
+//             // Update cancellation details regardless of refund success/failure
+//             order.status = 'Cancelled';
+//             order.cancelReason = cancelReason || 'Cancelled by admin';
+//             order.cancelledBy = 'admin';
+//             order.cancelledAt = new Date();
+
+//         } else {
+//             // Regular status update (non-cancellation)
+//             console.log("📝 Regular status update to:", status);
+//             order.status = status;
+//         }
+
+//         // Save the order with all updates
+//         await order.save();
+//         console.log("💾 Order saved successfully");
+
+//         const responseMessage = status === 'Cancelled' 
+//             ? `Order cancelled successfully! ${
+//                 refundProcessed 
+//                     ? `Automatic refund of ₹${refundDetails?.amount} has been initiated. Refund ID: ${refundDetails?.refundId}. Settlement expected in 5-7 business days.`
+//                     : order.refundInfo?.status === 'failed'
+//                         ? 'Automatic refund failed - please process manual refund via Razorpay dashboard.'
+//                         : 'No refund needed - payment was not captured.'
+//               }`
+//             : 'Order status updated successfully';
+
+//         console.log("📤 Sending response:", responseMessage);
+
+//         res.status(200).json({
+//             success: true,
+//             message: responseMessage,
+//             order: {
+//                 _id: order._id,
+//                 status: order.status,
+//                 paymentInfo: order.paymentInfo,
+//                 refundInfo: order.refundInfo,
+//                 cancelReason: order.cancelReason,
+//                 cancelledAt: order.cancelledAt
+//             },
+//             refundProcessed: refundProcessed,
+//             refundDetails: refundDetails
+//         });
+
+//     } catch (error) {
+//         console.error("❌ Error updating order status:", error);
+//         logger.error("Error updating order status", { 
+//             orderId, 
+//             error: error.message,
+//             stack: error.stack 
+//         });
+
+//         res.status(500).json({
+//             success: false,
+//             message: "Failed to update order status",
+//             error: error.message
+//         });
+//     }
+// });
+
 
 // Get Payment Status with enhanced refund tracking
 router.get('/paymentStatus/:orderId', async (req, res) => {
