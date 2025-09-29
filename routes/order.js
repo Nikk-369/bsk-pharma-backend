@@ -2082,13 +2082,7 @@ router.post('/createOrder', async (req, res) => {
     const { userId, items, address, phone, totalAmount } = req.body;
 
     console.log("=== CREATE ORDER REQUEST ===");
-    console.log("Request body:", {
-        userId: !!userId,
-        items: items?.length,
-        address: !!address,
-        phone: !!phone,
-        totalAmount
-    });
+    console.log("Full request body:", JSON.stringify(req.body, null, 2));
 
     try {
         // Comprehensive validation
@@ -2149,7 +2143,7 @@ router.post('/createOrder', async (req, res) => {
             const item = items[i];
             console.log(`Validating item ${i}:`, item);
 
-            if (!item.productId || !item.name || !item.quantity || item.quantity < 1 || !item.price || item.price < 0) {
+            if (!item.productId || !item.name || !item.quantity || item.quantity < 1 || item.price === undefined || item.price < 0) {
                 console.error(`Invalid item at index ${i}:`, item);
                 return res.status(400).json({
                     success: false,
@@ -2176,43 +2170,95 @@ router.post('/createOrder', async (req, res) => {
             });
         }
 
-        // Create Razorpay Order
+        // Prepare phone number (ensure it starts with +91 and has 10 digits)
+        let formattedPhone = phone.toString().trim();
+        // Remove any existing country code
+        formattedPhone = formattedPhone.replace(/^\+91/, '').replace(/^91/, '');
+        // Validate 10 digits
+        if (!/^\d{10}$/.test(formattedPhone)) {
+            return res.status(400).json({
+                success: false,
+                message: "Phone number must be exactly 10 digits"
+            });
+        }
+        formattedPhone = `+91${formattedPhone}`;
+
+        console.log("Formatted phone:", formattedPhone);
+
+        // Check if razorpayInstance is properly initialized
+        if (!razorpayInstance) {
+            console.error("Razorpay instance not initialized!");
+            return res.status(500).json({
+                success: false,
+                message: "Payment gateway configuration error. Please contact support.",
+                error: "Razorpay not initialized"
+            });
+        }
+
+        // Verify Razorpay credentials are set
+        if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+            console.error("Razorpay credentials missing in environment variables");
+            return res.status(500).json({
+                success: false,
+                message: "Payment gateway configuration error. Please contact support.",
+                error: "Missing Razorpay credentials"
+            });
+        }
+
+        console.log("Razorpay credentials present:", {
+            keyId: process.env.RAZORPAY_KEY_ID?.substring(0, 10) + '...',
+            keySecretPresent: !!process.env.RAZORPAY_KEY_SECRET
+        });
+
+        // Create Razorpay Order with minimal required fields
         console.log("Creating Razorpay order...");
+        const amountInPaise = Math.round(totalAmount * 100);
+        
         const razorpayOrderData = {
-            amount: Math.round(totalAmount * 100), // Convert to paise
+            amount: amountInPaise,
             currency: "INR",
-            receipt: `receipt_${Date.now()}_${userId}`,
-            payment_capture: 1,
+            receipt: `order_${Date.now()}_${userId.toString().slice(-6)}`,
             notes: {
                 userId: userId.toString(),
-                userEmail: user.email || '',
-                userName: user.name || '',
-                phone: phone.toString(),
-                address: address.toString()
+                phone: formattedPhone,
+                itemCount: items.length.toString()
             }
         };
 
-        // Add customer details if email exists
-        if (user.email) {
-            razorpayOrderData.customer_details = {
-                name: user.name || 'Customer',
-                email: user.email,
-                contact: phone.toString()
-            };
-        }
-
-        console.log("Razorpay order data:", razorpayOrderData);
+        console.log("Razorpay order request:", JSON.stringify(razorpayOrderData, null, 2));
 
         let razorpayOrder;
         try {
             razorpayOrder = await razorpayInstance.orders.create(razorpayOrderData);
-            console.log("Razorpay order created successfully:", razorpayOrder.id);
+            console.log("Razorpay order created successfully:", {
+                id: razorpayOrder.id,
+                amount: razorpayOrder.amount,
+                currency: razorpayOrder.currency,
+                status: razorpayOrder.status
+            });
         } catch (razorpayError) {
-            console.error("Razorpay order creation failed:", razorpayError);
+            console.error("=== RAZORPAY ERROR ===");
+            console.error("Error type:", razorpayError.constructor.name);
+            console.error("Error message:", razorpayError.message);
+            console.error("Error details:", JSON.stringify(razorpayError, null, 2));
+            
+            // Extract detailed error info
+            let errorDetails = "Unknown error";
+            if (razorpayError.error) {
+                errorDetails = JSON.stringify(razorpayError.error);
+            } else if (razorpayError.description) {
+                errorDetails = razorpayError.description;
+            } else if (razorpayError.message) {
+                errorDetails = razorpayError.message;
+            }
+            
+            console.error("Extracted error details:", errorDetails);
+            
             return res.status(500).json({
                 success: false,
                 message: "Failed to create payment order. Please try again.",
-                error: "Payment gateway error"
+                error: "Payment gateway error",
+                details: process.env.NODE_ENV === 'development' ? errorDetails : undefined
             });
         }
 
@@ -2221,7 +2267,7 @@ router.post('/createOrder', async (req, res) => {
         const orderData = {
             userId: userId,
             userEmail: user.email || '',
-            userName: user.name || '',
+            userName: user.name || 'Customer',
             items: items.map(item => ({
                 productId: item.productId.toString(),
                 name: item.name.toString().trim(),
@@ -2229,18 +2275,20 @@ router.post('/createOrder', async (req, res) => {
                 price: parseFloat(item.price)
             })),
             address: address.toString().trim(),
-            phone: phone.toString().trim(),
+            phone: formattedPhone,
             totalAmount: parseFloat(totalAmount),
             razorpayOrderId: razorpayOrder.id,
             paymentInfo: {
                 amount: parseFloat(totalAmount),
                 status: 'created',
+                razorpayOrderId: razorpayOrder.id,
                 updatedAt: new Date()
             },
-            status: 'Pending'
+            status: 'Pending',
+            createdAt: new Date()
         };
 
-        console.log("Database order data:", orderData);
+        console.log("Database order data:", JSON.stringify(orderData, null, 2));
 
         let savedOrder;
         try {
@@ -2248,61 +2296,57 @@ router.post('/createOrder', async (req, res) => {
             savedOrder = await newOrder.save();
             console.log("Database order created successfully:", savedOrder._id);
         } catch (dbError) {
-            console.error("Database order creation failed:", dbError);
-
-            // Try to cancel the Razorpay order if database save fails
-            try {
-                // Note: Razorpay doesn't have a direct cancel for created orders, 
-                // but we log this for manual cleanup if needed
-                console.log("Database save failed, Razorpay order may need manual cleanup:", razorpayOrder.id);
-            } catch (cleanupError) {
-                console.error("Cleanup attempt failed:", cleanupError);
-            }
+            console.error("=== DATABASE ERROR ===");
+            console.error("Error name:", dbError.name);
+            console.error("Error message:", dbError.message);
+            console.error("Error details:", JSON.stringify(dbError, null, 2));
 
             // Handle specific database errors
             if (dbError.name === 'ValidationError') {
                 const validationErrors = Object.values(dbError.errors).map(e => e.message);
                 return res.status(400).json({
                     success: false,
-                    message: "Order validation failed: " + validationErrors.join(', ')
+                    message: "Order validation failed: " + validationErrors.join(', '),
+                    razorpayOrderId: razorpayOrder.id
                 });
             }
 
             if (dbError.code === 11000) {
                 return res.status(400).json({
                     success: false,
-                    message: "Duplicate order detected. Please try again."
+                    message: "Duplicate order detected. Please try again.",
+                    razorpayOrderId: razorpayOrder.id
                 });
             }
 
             return res.status(500).json({
                 success: false,
-                message: "Failed to save order. Please try again.",
-                error: "Database error"
+                message: "Failed to save order. Please contact support with Razorpay Order ID: " + razorpayOrder.id,
+                error: "Database error",
+                razorpayOrderId: razorpayOrder.id
             });
         }
 
         // Log success
-        if (logger && typeof logger.info === 'function') {
+        if (typeof logger !== 'undefined' && logger && typeof logger.info === 'function') {
             logger.info("Order created successfully", {
                 orderId: savedOrder._id,
                 razorpayOrderId: razorpayOrder.id,
                 userId,
-                userEmail: user.email,
                 totalAmount
             });
         }
 
-        console.log("Order creation completed successfully");
+        console.log("=== ORDER CREATION SUCCESS ===");
 
         // Send success response
         res.status(201).json({
             success: true,
             message: "Order created successfully",
-            orderId: savedOrder._id,
+            orderId: savedOrder._id.toString(),
             razorpayOrderId: razorpayOrder.id,
             order: {
-                _id: savedOrder._id,
+                _id: savedOrder._id.toString(),
                 status: savedOrder.status,
                 totalAmount: savedOrder.totalAmount,
                 createdAt: savedOrder.createdAt,
@@ -2312,13 +2356,19 @@ router.post('/createOrder', async (req, res) => {
         });
 
     } catch (error) {
-        console.error("=== CREATE ORDER ERROR ===");
+        console.error("=== UNEXPECTED ERROR ===");
+        console.error("Error type:", error.constructor.name);
         console.error("Error message:", error.message);
         console.error("Error stack:", error.stack);
-        console.error("Request data:", { userId, itemsCount: items?.length, totalAmount });
+        console.error("Request data:", { 
+            userId, 
+            itemsCount: items?.length, 
+            totalAmount,
+            address: address?.substring(0, 50) + '...'
+        });
 
         // Log the error if logger is available
-        if (logger && typeof logger.error === 'function') {
+        if (typeof logger !== 'undefined' && logger && typeof logger.error === 'function') {
             logger.error("Order creation failed", {
                 error: error.message,
                 stack: error.stack,
@@ -2341,15 +2391,12 @@ router.post('/createOrder', async (req, res) => {
         } else if (error.code === 11000) {
             errorMessage = "Duplicate order detected";
             statusCode = 400;
-        } else if (error.message && error.message.includes('User not found')) {
-            errorMessage = "User account not found";
-            statusCode = 404;
         }
 
         res.status(statusCode).json({
             success: false,
             message: errorMessage,
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+            error: process.env.NODE_ENV === 'development' ? error.message : "Internal server error"
         });
     }
 });
